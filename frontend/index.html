@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 <!doctype html>
 <html lang="en">
 <<<<<<< HEAD
@@ -102,3 +103,5 @@ const set=(id,value)=>document.querySelector(id).textContent=value;
 form.addEventListener('submit',async event=>{event.preventDefault(); error.hidden=true; result.hidden=true; button.disabled=true; button.textContent='Inspecting…'; try { const response=await fetch('/api/plans',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({repository_url:form.repository_url.value})}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'Unable to create a plan'); set('#framework',data.framework);set('#language',data.language);set('#package-manager',data.package_manager);set('#port',data.port);set('#build-command',data.build_command);set('#start-command',data.start_command);set('#confidence','Confidence: '+data.confidence); document.querySelector('#rationale').replaceChildren(...data.rationale.map(item=>{const li=document.createElement('li');li.textContent=item;return li;})); result.hidden=false; } catch (caught) { error.textContent=caught.message; error.hidden=false; } finally { button.disabled=false; button.textContent='Inspect repository'; }});
 </script></body></html>
 >>>>>>> a6ed462abba2fa472ba7b1f22f059283965586ae
+=======
+>>>>>>> a7c28fa0798fe763f05b7b5fa46bb13306300045

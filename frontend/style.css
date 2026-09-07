@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 :root {
   color-scheme: dark;
   --bg: #101014;
@@ -64,3 +65,5 @@ h1 { font-size: clamp(2.5rem, 7vw, 5.5rem); line-height: .95; margin: .75rem 0 1
 .form-row { display: flex; gap: .75rem; } input { min-width: 0; flex: 1; border: 1px solid #4d5a80; border-radius: .55rem; padding: .85rem 1rem; color: inherit; background: #0e121d; font: inherit; } button { border: 0; border-radius: .55rem; padding: .85rem 1.2rem; background: #91a7ff; color: #10131a; font: inherit; font-weight: 800; cursor: pointer; } button:disabled { opacity: .6; cursor: wait; } :focus-visible { outline: 3px solid #f3c969; outline-offset: 3px; }
 [hidden] { display: none !important; } .error { color: #ffadad; margin-top: 1rem; } dl { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; } dt { color: #9da8c6; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; } dd { margin: .3rem 0 0; font-weight: 700; overflow-wrap: anywhere; } ul { color: #cbd3e9; padding-left: 1.2rem; } .plan-title { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; } .confidence { color: #f3c969; } @media (max-width: 620px) { .form-row { flex-direction: column; } dl { grid-template-columns: 1fr; } main { padding-top: 2rem; } }
 >>>>>>> a6ed462abba2fa472ba7b1f22f059283965586ae
+=======
+>>>>>>> a7c28fa0798fe763f05b7b5fa46bb13306300045
