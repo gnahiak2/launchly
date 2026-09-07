@@ -1,23 +1,20 @@
-# syntax=docker/dockerfile:1
-FROM rust:1.88-bookworm AS builder
+FROM docker.io/library/rust:1.88-bookworm AS backend
 WORKDIR /src
 COPY backend/Cargo.toml backend/Cargo.lock ./backend/
 COPY backend/src ./backend/src
-RUN cargo build --locked --manifest-path backend/Cargo.toml --release
+RUN cargo build --locked --release --manifest-path backend/Cargo.toml
 
-FROM node:22-bookworm-slim AS frontend-builder
-WORKDIR /src/frontend
-COPY frontend/package.json frontend/tsconfig.json ./
-RUN npm install
-COPY frontend/app.ts ./
-RUN npm run build
+FROM docker.io/library/node:22-bookworm-slim AS frontend
+WORKDIR /src
+COPY frontend/package.json frontend/tsconfig.json frontend/app.ts ./
+RUN corepack enable && pnpm install --no-frozen-lockfile && pnpm run build
+COPY frontend/index.html frontend/style.css ./
+RUN cp index.html style.css dist/
 
-FROM debian:bookworm-slim
+FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git podman && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-COPY --from=builder /src/backend/target/release/launchly /app/launchly
-COPY frontend/index.html frontend/style.css /app/frontend/
-COPY --from=frontend-builder /src/frontend/dist/app.js /app/frontend/app.js
+COPY --from=backend /src/backend/target/release/launchly /usr/local/bin/launchly
+COPY --from=frontend /src/dist /opt/launchly/frontend
+ENV LAUNCHLY_FRONTEND_DIR=/opt/launchly/frontend
 EXPOSE 8080
-ENV RUST_LOG=info LAUNCHLY_FRONTEND_DIR=/app/frontend CONTAINER_HOST=unix:///run/podman/podman.sock
-CMD ["/app/launchly"]
+ENTRYPOINT ["/usr/local/bin/launchly"]

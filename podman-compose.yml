@@ -3,21 +3,12 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-    image: launchly:dev
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-  caddy:
-    image: caddy:2-alpine
-    depends_on:
-      - launchly
-    ports:
-      - "80:80"
-      - "443:443"
+    image: localhost/launchly:dev
+    container_name: launchly
+    network_mode: host
+    security_opt:
+      - label=disable
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-volumes:
-  caddy-data:
-  caddy-config:
+      - /run/podman/podman.sock:/run/podman/podman.sock
+      - /tmp/launchly:/tmp/launchly:rw
+    restart: unless-stopped

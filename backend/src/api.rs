@@ -39,7 +39,7 @@ pub async fn get_deployment(
         None => (
             StatusCode::NOT_FOUND,
             Json(ErrorResponse {
-                error: format!("deployment {id} not found"),
+                error: "deployment not found".into(),
             }),
         )
             .into_response(),

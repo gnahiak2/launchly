@@ -1,3 +1,8 @@
-{$DOMAIN:localhost} {
-    reverse_proxy launchly:8080
+# Optional production reverse proxy. Replace the hostname with your real domain.
+# launchly.example.com {
+#     reverse_proxy 127.0.0.1:8080
+# }
+
+:80 {
+    reverse_proxy 127.0.0.1:8080
 }

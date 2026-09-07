@@ -1,55 +1,27 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Launchly — deploy a Git repository with an explainable plan.">
-  <title>Launchly · Deployments</title>
+  <title>Launchly</title>
   <link rel="stylesheet" href="/style.css">
-  <script type="module" src="/app.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#main-content">Skip to content</a>
-  <div class="shell">
-    <header class="hero">
-      <p class="eyebrow">Launchly</p>
-      <h1>From Git to alive.</h1>
-      <p class="lede">Inspect a repository, review the plan, and start a guarded deployment when you are ready.</p>
-    </header>
-
-    <main id="main-content" class="grid">
-      <section class="card" aria-labelledby="deploy-title">
-        <div class="card-heading"><div><p class="card-kicker">Deploy</p><h2 id="deploy-title">New deployment</h2></div><span class="badge">Podman</span></div>
-        <form id="deploy-form" class="form" novalidate>
-          <label class="field-label" for="repository-url">Git repository URL</label>
-          <input id="repository-url" name="repository_url" type="url" placeholder="https://github.com/you/your-app.git" autocomplete="url" required>
-          <label class="field-label" for="domain">Domain <span class="optional">(optional)</span></label>
-          <input id="domain" name="domain" type="text" placeholder="app.example.com" autocomplete="url">
-          <p class="field-hint">Launchly clones the repository, inspects it, and only runs a plan with strong signals.</p>
-          <div class="actions"><button id="plan-button" type="button">Inspect repository</button><button id="deploy-button" type="submit">Deploy</button> application</button></div>
-          <p id="form-message" class="message" role="status" aria-live="polite"></p>
-        </form>
-      </section>
-
-      <section class="card" aria-labelledby="plan-title" aria-live="polite">
-        <div class="card-heading"><div><p class="card-kicker">Plan</p><h2 id="plan-title">Deployment plan</h2></div><span id="confidence" class="badge badge-muted">Waiting</span></div>
-        <div id="empty-plan" class="empty-state"><p>Inspect a repository to see its detected stack, commands, port, and rationale.</p></div>
-        <div id="plan-content" class="plan-content" hidden>
-          <dl class="plan-grid">
-            <div><dt>Framework</dt><dd id="plan-framework"></dd></div><div><dt>Language</dt><dd id="plan-language"></dd></div>
-            <div><dt>Package manager</dt><dd id="plan-package-manager"></dd></div><div><dt>Port</dt><dd id="plan-port"></dd></div>
-            <div class="full"><dt>Build command</dt><dd id="plan-build"></dd></div><div class="full"><dt>Start command</dt><dd id="plan-start"></dd></div>
-          </dl>
-          <div class="reason"><strong>Why this plan?</strong><ul id="plan-rationale"></ul></div>
-        </div>
-      </section>
-
-      <section class="card status-card" aria-labelledby="status-title">
-        <div class="card-heading"><div><p class="card-kicker">Execution</p><h2 id="status-title">Deployment status</h2></div><span id="status-badge" class="badge badge-muted">Not started</span></div>
-        <div id="deployment-status" class="status-content"><p>Deployment progress will appear here after you start a deployment.</p></div>
-      </section>
-    </main>
-    <footer class="footer">Launchly · self-hosted deployment from Git</footer>
-  </div>
+  <main class="shell">
+    <header><p class="eyebrow">STATIC DEPLOYMENTS</p><h1>Ship a website.</h1><p class="lede">Give Launchly a public Git repository with a root <code>index.html</code>. It checks the files, runs unprivileged Nginx, and verifies the result.</p></header>
+    <section class="card">
+      <form id="deploy-form">
+        <label for="repository">Public Git repository URL</label>
+        <input id="repository" type="url" placeholder="https://github.com/you/site" required>
+        <label for="domain">Domain <span>(optional)</span></label>
+        <input id="domain" type="text" placeholder="www.example.com">
+        <div class="actions"><button id="inspect" type="button">Inspect repository</button><button id="deploy" type="submit" disabled>Deploy website</button></div>
+      </form>
+    </section>
+    <section id="message" class="message" hidden></section>
+    <section id="plan" class="card plan" hidden><h2>Deployment plan</h2><dl id="plan-details"></dl><h3>Why this plan?</h3><ul id="rationale"></ul></section>
+    <section id="status" class="card" hidden><h2>Deployment status</h2><p><strong id="state"></strong> <span id="status-message"></span></p><p id="url"></p></section>
+  </main>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

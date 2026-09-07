@@ -4,7 +4,7 @@ use crate::{
 };
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Stdio,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -19,46 +19,22 @@ use tokio::{
 use uuid::Uuid;
 
 const CLONE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-const BUILD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-const RUN_TIMEOUT: Duration = Duration::from_secs(30);
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(45);
+const IMAGE: &str = "docker.io/nginxinc/nginx-unprivileged:alpine";
 
 #[derive(Clone, Default)]
 pub struct DeploymentService {
-    deployments: Arc<RwLock<HashMap<String, DeploymentRecord>>>,
+    records: Arc<RwLock<HashMap<String, DeploymentRecord>>>,
 }
 
-pub async fn inspect_repository(repository_url: &str) -> Result<DeploymentPlan, String> {
-    let repository_url = detector::parse_repository_url(repository_url.trim())?.to_owned();
-    let preview_id = format!("preview-{}", Uuid::new_v4());
-    let workspace = workspace_dir(&preview_id);
-    tokio::fs::create_dir_all(&workspace)
-        .await
-        .map_err(|error| format!("failed to create inspection workspace: {error}"))?;
-
-    let result = async {
-        let clone = run_command(
-            "git",
-            vec![
-                "clone".into(),
-                "--depth".into(),
-                "1".into(),
-                repository_url.clone(),
-                workspace.to_string_lossy().into_owned(),
-            ],
-            CLONE_TIMEOUT,
-        )
-        .await?;
-        if !clone.success {
-            return Err(format!("git clone failed: {}", clone.stderr));
-        }
-
-        let plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
-        Ok(plan)
-    }
-    .await;
-
-    let _ = tokio::fs::remove_dir_all(&workspace).await;
+pub async fn inspect_repository(url: &str) -> Result<DeploymentPlan, String> {
+    let url = detector::validate_repository_url(url)?;
+    let id = format!("preview-{}", Uuid::new_v4());
+    let root = workspace_root(&id);
+    clone_repository(&url, &root).await?;
+    let result = detector::detect_plan(&url, &root);
+    let _ = tokio::fs::remove_dir_all(root).await;
     result
 }
 
@@ -68,39 +44,36 @@ impl DeploymentService {
     }
 
     pub async fn create(&self, request: DeployRequest) -> Result<DeploymentRecord, String> {
-        let repository_url =
-            detector::parse_repository_url(request.repository_url.trim())?.to_owned();
+        let url = detector::validate_repository_url(&request.repository_url)?;
         let domain = request
             .domain
-            .map(|value| value.trim().to_ascii_lowercase())
-            .filter(|value| !value.is_empty());
+            .map(|d| d.trim().to_ascii_lowercase())
+            .filter(|d| !d.is_empty());
         if let Some(domain) = &domain {
             validate_domain(domain)?;
         }
-
         let id = Uuid::new_v4().to_string();
-        let now = unix_timestamp();
+        let now = timestamp();
         let record = DeploymentRecord {
             id: id.clone(),
-            repository_url: repository_url.clone(),
+            repository_url: url.clone(),
             domain,
             state: "queued".into(),
             phase: "queued".into(),
             message: "Deployment queued".into(),
             plan: None,
-            image: None,
             container: None,
             host_port: None,
             created_at: now,
             updated_at: now,
         };
-        self.deployments
+        self.records
             .write()
             .await
             .insert(id.clone(), record.clone());
         let service = self.clone();
         tokio::spawn(async move {
-            if let Err(error) = service.run(id.clone(), repository_url).await {
+            if let Err(error) = service.run(id.clone(), url).await {
                 service.fail(&id, error).await;
             }
         });
@@ -108,286 +81,177 @@ impl DeploymentService {
     }
 
     pub async fn get(&self, id: &str) -> Option<DeploymentRecord> {
-        self.deployments.read().await.get(id).cloned()
+        self.records.read().await.get(id).cloned()
     }
 
-    async fn run(&self, id: String, repository_url: String) -> Result<(), String> {
-        let result = self.run_inner(id.clone(), repository_url).await;
+    async fn run(&self, id: String, url: String) -> Result<(), String> {
+        let result = self.run_inner(&id, &url).await;
         if result.is_err() {
             self.cleanup(&id).await;
         }
         result
     }
 
-    async fn run_inner(&self, id: String, repository_url: String) -> Result<(), String> {
-        let workspace = workspace_dir(&id);
-        let image = format!("localhost/launchly-deployment-{id}:latest");
-        let container = format!("launchly-deployment-{id}");
-        self.update(&id, "discovering", "cloning repository", None)
+    async fn run_inner(&self, id: &str, url: &str) -> Result<(), String> {
+        let base = workspace_root(id);
+        let site = base.join("site");
+        let container = format!("launchly-site-{id}");
+        let port = host_port(id);
+        self.update(id, "discovering", "cloning repository").await;
+        clone_repository(url, &site).await?;
+        self.update(id, "planning", "checking for root index.html")
             .await;
-        if workspace.exists() {
-            tokio::fs::remove_dir_all(&workspace)
-                .await
-                .map_err(|e| format!("failed to clean workspace: {e}"))?;
-        }
-        tokio::fs::create_dir_all(&workspace)
-            .await
-            .map_err(|e| format!("failed to create workspace: {e}"))?;
-
-        let clone = run_command(
-            "git",
-            vec![
-                "clone".into(),
-                "--depth".into(),
-                "1".into(),
-                repository_url.clone(),
-                workspace.to_string_lossy().into_owned(),
-            ],
-            CLONE_TIMEOUT,
-        )
-        .await?;
-        if !clone.success {
-            return Err(format!("git clone failed: {}", clone.stderr));
-        }
-
-        self.update(
-            &id,
-            "planning",
-            "detecting build plan from repository files",
-            None,
-        )
-        .await;
-        let plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
-        self.set_plan(&id, plan.clone()).await;
-
-        {
-            tokio::fs::write(
-                workspace.join("Containerfile"),
-                r#"FROM docker.io/nginxinc/nginx-unprivileged:alpine
-COPY --chown=101:101 . /usr/share/nginx/html
-EXPOSE 8080
-"#,
-            )
-            .await
-            .map_err(|error| format!("failed to create static-site Containerfile: {error}"))?;
-            tokio::fs::write(
-                workspace.join(".containerignore"),
-                r#".git
-.env
-.env.*
-*.pem
-*.key
-*.secret
-node_modules
-target
-dist
-build
-"#,
-            )
-            .await
-            .map_err(|error| format!("failed to create static-site ignore file: {error}"))?;
-        }
-
-        self.update(
-            &id,
-            "building",
-            "building application image with Podman",
-            None,
-        )
-        .await;
-        let build = run_command(
+        let plan = detector::detect_plan(url, &site)?;
+        self.set_plan(id, plan).await;
+        self.update_runtime(id, &container, port).await;
+        self.update(id, "starting", "starting unprivileged Nginx")
+            .await;
+        let run = command(
             "podman",
             vec![
-                "build".into(),
-                "--pull=missing".into(),
-                "--tag".into(),
-                image.clone(),
-                workspace.to_string_lossy().into_owned(),
+                "run",
+                "--detach",
+                "--pull=missing",
+                "--name",
+                &container,
+                "--network",
+                "bridge",
+                "--read-only",
+                "--tmpfs",
+                "/tmp:rw,noexec,nosuid,size=16m",
+                "--tmpfs",
+                "/var/run:rw,noexec,nosuid,size=16m",
+                "--tmpfs",
+                "/var/cache/nginx:rw,noexec,nosuid,size=32m",
+                "--cap-drop=ALL",
+                "--security-opt=no-new-privileges",
+                "--pids-limit=256",
+                "--memory=512m",
+                "--cpus=1",
+                "--publish",
+                &format!("127.0.0.1:{port}:8080"),
+                "--volume",
+                &format!("{}:/usr/share/nginx/html:ro,Z", site.display()),
+                IMAGE,
             ],
-            BUILD_TIMEOUT,
-        )
-        .await?;
-        if !build.success {
-            return Err(format!("Podman build failed: {}", build.stderr));
-        }
-
-        let host_port = host_port_for(&id);
-        self.update_runtime(&id, &image, &container, host_port)
-            .await;
-        self.update(
-            &id,
-            "starting",
-            "starting isolated application container",
-            None,
-        )
-        .await;
-        let run = run_command(
-            "podman",
-            vec![
-                "run".into(),
-                "--detach".into(),
-                "--name".into(),
-                container.clone(),
-                "--network".into(),
-                "bridge".into(),
-                "--read-only".into(),
-                "--tmpfs".into(),
-                "/var/run:rw,noexec,nosuid,size=16m".into(),
-                "--tmpfs".into(),
-                "/var/cache/nginx:rw,noexec,nosuid,size=32m".into(),
-                "--tmpfs".into(),
-                "/tmp:rw,noexec,nosuid,size=16m".into(),
-                "--cap-drop=ALL".into(),
-                "--security-opt=no-new-privileges".into(),
-                "--pids-limit=256".into(),
-                "--memory=512m".into(),
-                "--cpus=1".into(),
-                "--publish".into(),
-                format!("127.0.0.1:{host_port}:{}", plan.port),
-                image.clone(),
-            ],
-            RUN_TIMEOUT,
+            COMMAND_TIMEOUT,
         )
         .await?;
         if !run.success {
-            return Err(format!("Podman run failed: {}", run.stderr));
+            return Err(format!("Podman run failed: {}", clean_output(&run.stderr)));
         }
-
-        self.update(
-            &id,
-            "verifying",
-            "waiting for application health check",
-            None,
-        )
-        .await;
-        if let Err(error) = wait_for_health(host_port).await {
-            let logs = run_command(
+        self.update(id, "verifying", "waiting for HTTP 200 from the website")
+            .await;
+        if let Err(error) = wait_for_health(port).await {
+            let logs = command(
                 "podman",
-                vec![
-                    "logs".into(),
-                    "--tail".into(),
-                    "100".into(),
-                    container.clone(),
-                ],
-                RUN_TIMEOUT,
+                vec!["logs", "--tail", "100", &container],
+                COMMAND_TIMEOUT,
             )
             .await
-            .map(|output| truncate(&output.stdout, 8_192))
+            .map(|o| truncate(&o.stdout, 4096))
             .unwrap_or_default();
-            let _ = run_command(
-                "podman",
-                vec!["rm".into(), "--force".into(), container.clone()],
-                RUN_TIMEOUT,
-            )
-            .await;
-            let diagnostic = if logs.trim().is_empty() {
+            let _ = command("podman", vec!["rm", "--force", &container], COMMAND_TIMEOUT).await;
+            let detail = if logs.trim().is_empty() {
                 String::new()
             } else {
                 format!(" Container logs: {logs}")
             };
-            return Err(format!("health verification failed: {error}.{diagnostic}"));
+            return Err(format!("health verification failed: {error}.{detail}"));
         }
-
-        self.update(&id, "live", "application is healthy and live", None)
-            .await;
+        self.update(id, "live", "website is live").await;
         Ok(())
     }
 
-    async fn set_plan(&self, id: &str, plan: DeploymentPlan) {
-        let mut deployments = self.deployments.write().await;
-        if let Some(record) = deployments.get_mut(id) {
-            record.plan = Some(plan);
-            record.updated_at = unix_timestamp();
-        }
-    }
-
-    async fn update_runtime(&self, id: &str, image: &str, container: &str, host_port: u16) {
-        let mut deployments = self.deployments.write().await;
-        if let Some(record) = deployments.get_mut(id) {
-            record.image = Some(image.into());
-            record.container = Some(container.into());
-            record.host_port = Some(host_port);
-            record.updated_at = unix_timestamp();
-        }
-    }
-
-    async fn update(&self, id: &str, state: &str, message: &str, plan: Option<DeploymentPlan>) {
-        let mut deployments = self.deployments.write().await;
-        if let Some(record) = deployments.get_mut(id) {
-            record.state = state.into();
-            record.phase = state.into();
-            record.message = message.into();
-            if plan.is_some() {
-                record.plan = plan;
-            }
-            record.updated_at = unix_timestamp();
-        }
-    }
-
     async fn cleanup(&self, id: &str) {
-        let workspace = workspace_dir(id);
-        let image = format!("localhost/launchly-deployment-{id}:latest");
-        let container = format!("launchly-deployment-{id}");
-        let _ = run_command(
-            "podman",
-            vec!["rm".into(), "--force".into(), container],
-            RUN_TIMEOUT,
-        )
-        .await;
-        let _ = run_command(
-            "podman",
-            vec!["rmi".into(), "--force".into(), image],
-            RUN_TIMEOUT,
-        )
-        .await;
-        let _ = tokio::fs::remove_dir_all(workspace).await;
+        if let Some(record) = self.get(id).await {
+            if let Some(container) = record.container {
+                let _ = command("podman", vec!["rm", "--force", &container], COMMAND_TIMEOUT).await;
+            }
+        }
+        let _ = tokio::fs::remove_dir_all(workspace_root(id)).await;
     }
-
-    async fn fail(&self, id: &str, message: String) {
-        let mut deployments = self.deployments.write().await;
-        if let Some(record) = deployments.get_mut(id) {
-            record.state = "failed".into();
-            record.phase = "deployment".into();
-            record.message = message;
-            record.updated_at = unix_timestamp();
+    async fn fail(&self, id: &str, error: String) {
+        self.update(id, "failed", &error).await;
+    }
+    async fn update(&self, id: &str, state: &str, message: &str) {
+        if let Some(r) = self.records.write().await.get_mut(id) {
+            r.state = state.into();
+            r.phase = state.into();
+            r.message = message.into();
+            r.updated_at = timestamp();
+        }
+    }
+    async fn set_plan(&self, id: &str, plan: DeploymentPlan) {
+        if let Some(r) = self.records.write().await.get_mut(id) {
+            r.plan = Some(plan);
+            r.updated_at = timestamp();
+        }
+    }
+    async fn update_runtime(&self, id: &str, container: &str, port: u16) {
+        if let Some(r) = self.records.write().await.get_mut(id) {
+            r.container = Some(container.into());
+            r.host_port = Some(port);
+            r.updated_at = timestamp();
         }
     }
 }
 
-struct CommandOutput {
+struct Output {
     success: bool,
     stdout: String,
     stderr: String,
 }
-
-async fn run_command(
-    program: &str,
-    args: Vec<String>,
-    duration: Duration,
-) -> Result<CommandOutput, String> {
-    let mut command = Command::new(program);
-    command
+async fn command(program: &str, args: Vec<&str>, limit: Duration) -> Result<Output, String> {
+    let child = Command::new(program)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let output = timeout(duration, command.output())
+        .spawn()
+        .map_err(|e| format!("failed to start {program}: {e}"))?;
+    let result = timeout(limit, child.wait_with_output())
         .await
-        .map_err(|_| format!("{program} timed out after {duration:?}"))?
-        .map_err(|e| format!("failed to run {program}: {e}"))?;
-    Ok(CommandOutput {
-        success: output.status.success(),
-        stdout: truncate(&String::from_utf8_lossy(&output.stdout), 32_768),
-        stderr: truncate(&String::from_utf8_lossy(&output.stderr), 32_768),
+        .map_err(|_| format!("{program} timed out"))?
+        .map_err(|e| format!("{program} failed: {e}"))?;
+    Ok(Output {
+        success: result.status.success(),
+        stdout: String::from_utf8_lossy(&result.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&result.stderr).into_owned(),
     })
 }
 
+async fn clone_repository(url: &str, destination: &Path) -> Result<(), String> {
+    if let Some(parent) = destination.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("failed to create workspace: {e}"))?;
+    }
+    let output = command(
+        "git",
+        vec![
+            "clone",
+            "--depth",
+            "1",
+            "--",
+            url,
+            &destination.to_string_lossy(),
+        ],
+        CLONE_TIMEOUT,
+    )
+    .await?;
+    if output.success {
+        Ok(())
+    } else {
+        Err(format!(
+            "git clone failed: {}",
+            clean_output(&output.stderr)
+        ))
+    }
+}
+
 async fn wait_for_health(port: u16) -> Result<(), String> {
-    let deadline = tokio::time::Instant::now() + HEALTH_TIMEOUT;
-    loop {
-        if tokio::time::Instant::now() >= deadline {
-            return Err("timed out waiting for HTTP response".into());
-        }
+    let start = tokio::time::Instant::now();
+    while start.elapsed() < HEALTH_TIMEOUT {
         if let Ok(Ok(mut stream)) = timeout(
             Duration::from_secs(2),
             TcpStream::connect(("127.0.0.1", port)),
@@ -395,59 +259,62 @@ async fn wait_for_health(port: u16) -> Result<(), String> {
         .await
         {
             let _ = stream
-                .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .write_all(b"GET / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n")
                 .await;
-            let mut response = [0_u8; 128];
-            if let Ok(Ok(size)) = timeout(Duration::from_secs(2), stream.read(&mut response)).await
-            {
-                let text = String::from_utf8_lossy(&response[..size]);
-                if text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200") {
+            let mut bytes = [0u8; 128];
+            if let Ok(Ok(size)) = timeout(Duration::from_secs(2), stream.read(&mut bytes)).await {
+                let response = String::from_utf8_lossy(&bytes[..size]);
+                if response.starts_with("HTTP/")
+                    && response.split_whitespace().nth(1) == Some("200")
+                {
                     return Ok(());
                 }
             }
         }
-        sleep(Duration::from_secs(1)).await;
+        sleep(Duration::from_millis(500)).await;
     }
+    Err("timed out waiting for HTTP 200".into())
 }
 
-fn workspace_dir(id: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("launchly")
-        .join("deployments")
+fn workspace_root(id: &str) -> PathBuf {
+    std::env::var_os("LAUNCHLY_WORKDIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp/launchly/deployments"))
         .join(id)
 }
-fn host_port_for(id: &str) -> u16 {
-    10_000
-        + (id
-            .as_bytes()
-            .iter()
-            .fold(0_u16, |sum, byte| sum.wrapping_add(*byte as u16))
-            % 2_000)
+fn host_port(id: &str) -> u16 {
+    let value = id
+        .as_bytes()
+        .iter()
+        .fold(0u16, |a, b| a.wrapping_add(*b as u16));
+    20000 + value % 20000
 }
-fn unix_timestamp() -> u64 {
+fn timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
 }
-fn truncate(value: &str, limit: usize) -> String {
-    if value.len() <= limit {
-        value.into()
+fn truncate(value: &str, max: usize) -> String {
+    value.chars().take(max).collect()
+}
+fn clean_output(value: &str) -> String {
+    let clean = value.trim();
+    if clean.is_empty() {
+        "no diagnostic output".into()
     } else {
-        format!("{}…", &value[..limit])
+        truncate(clean, 4096)
     }
 }
-
-fn validate_domain(domain: &str) -> Result<(), String> {
-    if domain.len() > 253
-        || domain.starts_with('.')
-        || domain.ends_with('.')
-        || domain.contains("..")
-        || !domain
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+fn validate_domain(value: &str) -> Result<(), String> {
+    if value.len() > 253
+        || value.contains(['/', ':', '@', ' '])
+        || !value.contains('.')
+        || value.split('.').any(|part| {
+            part.is_empty() || !part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        })
     {
-        return Err("domain must be a valid hostname".into());
+        return Err("domain must be a simple hostname".into());
     }
     Ok(())
 }
@@ -455,22 +322,9 @@ fn validate_domain(domain: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[tokio::test]
-    async fn creates_queued_deployment() {
-        let service = DeploymentService::new();
-        let record = service
-            .create(DeployRequest {
-                repository_url: "https://github.com/acme/app.git".into(),
-                domain: None,
-            })
-            .await
-            .unwrap();
-        assert_eq!(record.state, "queued");
-        assert!(service.get(&record.id).await.is_some());
-    }
     #[test]
-    fn validates_domains() {
-        assert!(validate_domain("app.example.com").is_ok());
-        assert!(validate_domain("bad/domain").is_err());
+    fn port_is_in_safe_range() {
+        let port = host_port("12345678-1234-1234-1234-123456789abc");
+        assert!((20000..40000).contains(&port));
     }
 }

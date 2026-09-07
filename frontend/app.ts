@@ -1,135 +1,19 @@
-interface DeploymentPlan {
-  framework: string;
-  language: string;
-  package_manager: string;
-  build_command: string;
-  start_command: string;
-  port: number;
-  confidence: string;
-  rationale: string[];
-}
-
-interface DeploymentRecord {
-  id: string;
-  state: string;
-  phase: string;
-  message: string;
-  plan: DeploymentPlan | null;
-  image: string | null;
-  container: string | null;
-  host_port: number | null;
-}
-
-interface ErrorResponse { error: string }
-
+type Plan = { framework:string; language:string; package_manager:string; build_command:string; start_command:string; port:number; confidence:string; rationale:string[]; repository_url:string };
+type Deployment = { id:string; state:string; message:string; plan?:Plan; host_port?:number };
 const form = document.querySelector<HTMLFormElement>('#deploy-form')!;
-const repository = document.querySelector<HTMLInputElement>('#repository-url')!;
+const repository = document.querySelector<HTMLInputElement>('#repository')!;
 const domain = document.querySelector<HTMLInputElement>('#domain')!;
-const planButton = document.querySelector<HTMLButtonElement>('#plan-button')!;
-const deployButton = document.querySelector<HTMLButtonElement>('#deploy-button')!;
-const message = document.querySelector<HTMLElement>('#form-message')!;
-const emptyPlan = document.querySelector<HTMLElement>('#empty-plan')!;
-const planContent = document.querySelector<HTMLElement>('#plan-content')!;
-const confidence = document.querySelector<HTMLElement>('#confidence')!;
-const statusBadge = document.querySelector<HTMLElement>('#status-badge')!;
-const statusContent = document.querySelector<HTMLElement>('#deployment-status')!;
-
-function setText(id: string, value: string): void {
-  document.querySelector<HTMLElement>(id)!.textContent = value;
-}
-
-function showMessage(text: string, error = false): void {
-  message.textContent = text;
-  message.classList.toggle('error', error);
-}
-
-async function request<T extends object>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
-  const data = await response.json() as T | ErrorResponse;
-  if (!response.ok) throw new Error('error' in data ? data.error : 'Request failed');
-  return data as T;
-}
-
-function renderPlan(plan: DeploymentPlan): void {
-  emptyPlan.hidden = true;
-  planContent.hidden = false;
-  confidence.textContent = `Confidence: ${plan.confidence}`;
-  setText('#plan-framework', plan.framework);
-  setText('#plan-language', plan.language);
-  setText('#plan-package-manager', plan.package_manager);
-  setText('#plan-port', String(plan.port));
-  setText('#plan-build', plan.build_command);
-  setText('#plan-start', plan.start_command);
-  document.querySelector('#plan-rationale')!.replaceChildren(...plan.rationale.map((reason) => {
-    const item = document.createElement('li');
-    item.textContent = reason;
-    return item;
-  }));
-  // The URL-only preview can be low-confidence; the deployment job performs
-  // authoritative repository inspection before building anything.
-  deployButton.disabled = false;
-}
-
-async function inspect(): Promise<DeploymentPlan | null> {
-  const repositoryUrl = repository.value.trim();
-  if (!repositoryUrl) { showMessage('Enter a repository URL first.', true); repository.focus(); return null; }
-  planButton.disabled = true;
-  deployButton.disabled = true;
-  showMessage('Inspecting repository…');
-  try {
-    const plan = await request<DeploymentPlan>('/api/plans', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ repository_url: repositoryUrl }),
-    });
-    renderPlan(plan);
-    showMessage('Plan ready. Review it before deploying.');
-    return plan;
-  } catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Unable to inspect repository.', true);
-    return null;
-  } finally { planButton.disabled = false; }
-}
-
-function renderStatus(record: DeploymentRecord): void {
-  statusBadge.textContent = record.state;
-  statusBadge.dataset.state = record.state;
-  statusContent.replaceChildren();
-  const summary = document.createElement('p');
-  summary.textContent = `${record.phase}: ${record.message}`;
-  statusContent.append(summary);
-  if (record.plan) renderPlan(record.plan);
-}
-
-async function pollDeployment(id: string): Promise<void> {
-  const terminal = new Set(['live', 'failed']);
-  for (;;) {
-    const record = await request<DeploymentRecord>(`/api/deployments/${encodeURIComponent(id)}`);
-    renderStatus(record);
-    if (terminal.has(record.state)) {
-      deployButton.disabled = record.state !== 'live';
-      return;
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 1500));
-  }
-}
-
-planButton.addEventListener('click', () => { void inspect(); });
-form.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const plan = await inspect();
-  if (!plan) return;
-  deployButton.disabled = true;
-  showMessage('Queueing deployment…');
-  try {
-    const record = await request<DeploymentRecord>('/api/deployments', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ repository_url: repository.value.trim(), domain: domain.value.trim() || null }),
-    });
-    renderStatus(record);
-    await pollDeployment(record.id);
-    showMessage('Deployment finished.');
-  } catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Deployment failed.', true);
-    deployButton.disabled = false;
-  }
-});
+const inspectButton = document.querySelector<HTMLButtonElement>('#inspect')!;
+const deployButton = document.querySelector<HTMLButtonElement>('#deploy')!;
+const message = document.querySelector<HTMLElement>('#message')!;
+const planSection = document.querySelector<HTMLElement>('#plan')!;
+const details = document.querySelector<HTMLElement>('#plan-details')!;
+const rationale = document.querySelector<HTMLUListElement>('#rationale')!;
+const statusSection = document.querySelector<HTMLElement>('#status')!;
+let currentPlan: Plan | undefined;
+const showMessage = (text:string, good=false) => { message.textContent=text; message.hidden=false; message.className=good?'message ok':'message'; };
+const request = async <T>(url:string, options?:RequestInit):Promise<T> => { const response=await fetch(url, options); const data=await response.json(); if(!response.ok) throw new Error(data.error || 'Request failed'); return data; };
+function renderPlan(value:Plan){ currentPlan=value; planSection.hidden=false; deployButton.disabled=false; details.innerHTML=''; const fields:[string,string|number][]=[['Repository',value.repository_url],['Framework',value.framework],['Language',value.language],['Build',value.build_command],['Server',value.start_command],['Port',value.port],['Confidence',value.confidence]]; for(const [name,text] of fields){const dt=document.createElement('dt');dt.textContent=name;const dd=document.createElement('dd');dd.textContent=String(text);details.append(dt,dd)} rationale.replaceChildren(...value.rationale.map(item=>{const li=document.createElement('li');li.textContent=item;return li;})); }
+inspectButton.onclick=async()=>{ try{inspectButton.disabled=true;showMessage('Cloning and inspecting the repository…');renderPlan(await request<Plan>('/api/plans',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repository_url:repository.value})}));showMessage('Repository is ready to deploy.',true);}catch(error){showMessage((error as Error).message)}finally{inspectButton.disabled=false;} };
+form.onsubmit=async event=>{event.preventDefault();if(!currentPlan){return}try{deployButton.disabled=true;const deployment=await request<Deployment>('/api/deployments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repository_url:repository.value,domain:domain.value||null})});statusSection.hidden=false;poll(deployment.id);}catch(error){showMessage((error as Error).message);deployButton.disabled=false;}};
+async function poll(id:string){try{const deployment=await request<Deployment>(`/api/deployments/${id}`);statusSection.hidden=false;document.querySelector('#state')!.textContent=deployment.state;document.querySelector('#status-message')!.textContent=deployment.message;if(deployment.state==='live'){showMessage('Website deployed successfully.',true);return}if(deployment.state==='failed'){showMessage(deployment.message);deployButton.disabled=false;return}setTimeout(()=>poll(id),1500);}catch(error){showMessage((error as Error).message);deployButton.disabled=false;}}

@@ -33,7 +33,6 @@ pub struct DeploymentRecord {
     pub phase: String,
     pub message: String,
     pub plan: Option<DeploymentPlan>,
-    pub image: Option<String>,
     pub container: Option<String>,
     pub host_port: Option<u16>,
     pub created_at: u64,
