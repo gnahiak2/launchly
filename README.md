@@ -58,6 +58,134 @@ On macOS, start the Podman virtual machine before using Podman:
 podman machine start
 ```
 
+## Deploy on Linux
+
+Launchly runs natively on Linux with Podman and does not require a virtual machine. Ubuntu 22.04+ and Debian 12+ are recommended.
+
+Install the host dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y podman git curl
+```
+
+Verify the installation:
+
+```bash
+podman --version
+podman info
+```
+
+Build and start Launchly from the repository root:
+
+```bash
+podman build -t launchly:dev -f Containerfile .
+podman rm -f launchly 2>/dev/null || true
+podman run -d \
+  --name launchly \
+  -p 8080:8080 \
+  launchly:dev
+```
+
+Verify the service:
+
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+For a persistent Linux host, enable Podman’s user socket so deployment jobs can access the Podman service without a privileged daemon:
+
+```bash
+systemctl --user enable --now podman.socket
+systemctl --user status podman.socket
+```
+
+If Launchly itself runs inside a container, mount the Podman socket and a shared workspace explicitly. A native host installation is simpler and safer for the first deployment.
+
+To run Launchly as a systemd user service, create `~/.config/systemd/user/launchly.service`:
+
+```ini
+[Unit]
+Description=Launchly deployment platform
+After=podman.socket
+
+[Service]
+WorkingDirectory=/opt/launchly
+ExecStart=/usr/bin/podman run --rm --name launchly -p 8080:8080 localhost/launchly:dev
+ExecStop=/usr/bin/podman stop -t 10 launchly
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+Then enable it:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now launchly.service
+journalctl --user -u launchly.service -f
+```
+
+For production Linux deployments, put Caddy or another reverse proxy in front of port `8080`, restrict the Launchly API to the operator’s network, configure firewall rules explicitly, and back up any persistent deployment state when persistence is added.
+
+## Deploy on Fedora
+
+Fedora supports rootless Podman directly and does not require Docker.
+
+Install the host dependencies:
+
+```bash
+sudo dnf install -y podman git curl
+```
+
+Verify and start Launchly:
+
+```bash
+podman --version
+podman info
+podman build -t launchly:dev -f Containerfile .
+podman rm -f launchly 2>/dev/null || true
+podman run -d \
+  --name launchly \
+  -p 8080:8080 \
+  launchly:dev
+```
+
+Check the service:
+
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+For a persistent user service on Fedora:
+
+```bash
+systemctl --user enable --now podman.socket
+loginctl enable-linger "$USER"
+```
+
+## Run with Docker
+
+The `Containerfile` is compatible with Docker’s build and run commands, so Docker can host the Launchly web/API container:
+
+```bash
+docker build -t launchly:dev -f Containerfile .
+docker rm -f launchly 2>/dev/null || true
+docker run -d \
+  --name launchly \
+  -p 8080:8080 \
+  launchly:dev
+```
+
+Verify it:
+
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+**Important:** the current deployment executor invokes `podman` for Git application image builds and runtime containers. Docker can run the Launchly dashboard and API, but a Docker-only host will not complete application deployments yet. For full deployment execution, install Podman as well, run Launchly natively with Podman, or add a Docker runtime adapter before using Docker in production.
+
 ## Run with Podman
 
 Build the complete backend and frontend image:
