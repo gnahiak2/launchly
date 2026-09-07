@@ -176,13 +176,27 @@ impl DeploymentService {
         if plan.framework == "Vanilla HTML" {
             tokio::fs::write(
                 workspace.join("Containerfile"),
-                "FROM nginx:alpine\\nCOPY . /usr/share/nginx/html\\nRUN sed -i 's/listen       80;/listen       8080;/' /etc/nginx/conf.d/default.conf\\nEXPOSE 8080\\n",
+                r#"FROM nginx:alpine
+COPY . /usr/share/nginx/html
+RUN sed -i 's/listen       80;/listen       8080;/' /etc/nginx/conf.d/default.conf
+EXPOSE 8080
+"#,
             )
             .await
             .map_err(|error| format!("failed to create static-site Containerfile: {error}"))?;
             tokio::fs::write(
                 workspace.join(".containerignore"),
-                ".git\\n.env\\n.env.*\\n*.pem\\n*.key\\n*.secret\\nnode_modules\\ntarget\\ndist\\nbuild\\n",
+                r#".git
+.env
+.env.*
+*.pem
+*.key
+*.secret
+node_modules
+target
+dist
+build
+"#,
             )
             .await
             .map_err(|error| format!("failed to create static-site ignore file: {error}"))?;
