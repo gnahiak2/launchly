@@ -1,302 +1,164 @@
 # Launchly
 
-Launchly is a self-hosted deployment platform for turning a Git repository into a running website.
-
-Give Launchly a repository and it will:
+Launchly deploys simple websites from Git repositories.
 
 ```text
-Git repository
-      ↓
-Inspect
-      ↓
-Explain a deployment plan
-      ↓
-Build with Podman
-      ↓
-Run in an isolated container
-      ↓
-Verify health
-      ↓
-Live
+Git repository → inspect index.html → build Nginx image → run with Podman → health check → live
 ```
 
-The project is intentionally focused on simple, explainable, single-machine deployments rather than Kubernetes-style orchestration.
+Launchly is designed for one self-hosted Linux machine. It intentionally focuses on static HTML/CSS/JavaScript websites instead of trying to be a general-purpose application orchestrator.
 
-## Current capabilities
+## Supported websites
 
-- Rust/Axum backend with JSON APIs.
-- Lightweight server-served frontend.
-- TypeScript frontend client compiled during the container build.
-- Shallow Git repository inspection with bounded timeouts.
-- Detection for:
-  - Rust/Cargo projects;
-  - Node.js projects using npm, pnpm, or Yarn;
-  - Python projects using pip or Poetry;
-  - Dockerfile/Containerfile-based applications;
-  - vanilla HTML/CSS/JavaScript websites.
-- Static website support for repositories containing `index.html`.
-- Explainable plans containing framework, language, package manager, commands, port, confidence, and rationale.
-- Optional Gemini fallback for repositories that local detection cannot identify.
-- Asynchronous deployment jobs with observable states.
-- Podman image builds and isolated application containers.
-- Resource limits, dropped capabilities, read-only runtime filesystems, and HTTP health checks.
-- Cleanup of failed deployment workspaces, images, and containers.
+A repository is deployable when it contains:
 
-## Requirements
-
-For local development:
-
-- Rust 1.88 or newer;
-- Cargo;
-- Git;
-- Node.js and npm for frontend TypeScript compilation;
-- Podman 4 or newer for image builds and application containers.
-
-On macOS, start the Podman virtual machine before using Podman:
-
-```bash
-podman machine start
+```text
+index.html
 ```
 
-## Deploy on Linux
+The site may also contain CSS, JavaScript, images, fonts, and other static assets. Launchly does not run `npm`, Python, Rust, or repository-provided build scripts.
 
-Launchly runs natively on Linux with Podman and does not require a virtual machine. Ubuntu 22.04+ and Debian 12+ are recommended.
-
-Install the host dependencies:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y podman git curl
-```
-
-Verify the installation:
-
-```bash
-podman --version
-podman info
-```
-
-Build and start Launchly from the repository root:
-
-```bash
-podman build -t launchly:dev -f Containerfile .
-podman rm -f launchly 2>/dev/null || true
-podman run -d \
-  --name launchly \
-  -p 8080:8080 \
-  launchly:dev
-```
-
-Verify the service:
-
-```bash
-curl http://127.0.0.1:8080/api/health
-```
-
-For a persistent Linux host, enable Podman’s user socket so deployment jobs can access the Podman service without a privileged daemon:
-
-```bash
-systemctl --user enable --now podman.socket
-systemctl --user status podman.socket
-```
-
-If Launchly itself runs inside a container, mount the Podman socket and a shared workspace explicitly. A native host installation is simpler and safer for the first deployment.
-
-To run Launchly as a systemd user service, create `~/.config/systemd/user/launchly.service`:
-
-```ini
-[Unit]
-Description=Launchly deployment platform
-After=podman.socket
-
-[Service]
-WorkingDirectory=/opt/launchly
-ExecStart=/usr/bin/podman run --rm --name launchly -p 8080:8080 localhost/launchly:dev
-ExecStop=/usr/bin/podman stop -t 10 launchly
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-
-Then enable it:
-
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now launchly.service
-journalctl --user -u launchly.service -f
-```
-
-For production Linux deployments, put Caddy or another reverse proxy in front of port `8080`, restrict the Launchly API to the operator’s network, configure firewall rules explicitly, and back up any persistent deployment state when persistence is added.
-
-## Deploy on Fedora
-
-Fedora supports rootless Podman directly and does not require Docker.
-
-Install the host dependencies:
-
-```bash
-sudo dnf install -y podman git curl
-```
-
-Verify and start Launchly:
-
-```bash
-podman --version
-podman info
-podman build -t launchly:dev -f Containerfile .
-podman rm -f launchly 2>/dev/null || true
-podman run -d \
-  --name launchly \
-  -p 8080:8080 \
-  launchly:dev
-```
-
-Check the service:
-
-```bash
-curl http://127.0.0.1:8080/api/health
-```
-
-For a persistent user service on Fedora:
-
-```bash
-systemctl --user enable --now podman.socket
-loginctl enable-linger "$USER"
-```
-
-## Run with Docker
-
-The `Containerfile` is compatible with Docker’s build and run commands, so Docker can host the Launchly web/API container:
-
-```bash
-docker build -t launchly:dev -f Containerfile .
-docker rm -f launchly 2>/dev/null || true
-docker run -d \
-  --name launchly \
-  -p 8080:8080 \
-  launchly:dev
-```
-
-Verify it:
-
-```bash
-curl http://127.0.0.1:8080/api/health
-```
-
-**Important:** the current deployment executor invokes `podman` for Git application image builds and runtime containers. Docker can run the Launchly dashboard and API, but a Docker-only host will not complete application deployments yet. For full deployment execution, install Podman as well, run Launchly natively with Podman, or add a Docker runtime adapter before using Docker in production.
-
-## Run with Podman
-
-Build the complete backend and frontend image:
-
-```bash
-podman build -t launchly:dev -f Containerfile .
-```
-
-Run Launchly:
-
-```bash
-podman rm -f launchly 2>/dev/null || true
-podman run -d \
-  --name launchly \
-  -p 8080:8080 \
-  launchly:dev
-```
-
-Open the dashboard at <http://localhost:8080>.
-
-Check that the service is healthy:
-
-```bash
-curl http://localhost:8080/api/health
-```
-
-Expected response:
-
-```json
-{"status":"ok"}
-```
-
-View application logs or stop the service:
-
-```bash
-podman logs -f launchly
-podman stop launchly
-```
-
-### Podman-in-Podman note
-
-The runtime image includes the Podman client because deployment jobs invoke Podman. When Launchly itself runs inside a container, deployment execution also requires:
-
-1. access to a Podman API socket;
-2. a workspace path visible to both Launchly and the Podman service.
-
-Running the backend directly on the host is the simplest development setup. Do not expose the Podman socket to arbitrary application containers or untrusted workloads.
-
-## Local development
-
-Run the backend directly from the repository root:
-
-```bash
-cargo run --manifest-path backend/Cargo.toml
-```
-
-Build the frontend TypeScript client:
-
-```bash
-cd frontend
-npm install
-npm run build
-cd ..
-```
-
-The container build performs this frontend compilation automatically. The backend serves the generated browser bundle from `frontend/app.js` in the runtime image.
-
-Run backend tests in a Rust 1.88+ environment:
-
-```bash
-cargo test --manifest-path backend/Cargo.toml
-```
-
-Format Rust code:
-
-```bash
-cargo fmt --manifest-path backend/Cargo.toml
-```
-
-## Dashboard workflow
-
-1. Open <http://localhost:8080>.
-2. Enter a public HTTP(S) Git repository URL.
-3. Click **Inspect repository**.
-4. Launchly shallow-clones the repository into a temporary isolated workspace.
-5. The plan is generated from actual repository files—not only from the repository name.
-6. Review the detected stack, commands, port, confidence, and rationale.
-7. Optionally provide a hostname.
-8. Click **Deploy application**.
-9. Watch the deployment status as it moves through the deployment lifecycle.
-
-Vanilla HTML repositories containing `index.html` are planned as static Nginx websites:
+Every supported site gets the same simple plan:
 
 ```text
 Framework:       Vanilla HTML
 Package manager: None
 Build command:   No build required
+Server:          unprivileged Nginx
 Port:            8080
 ```
 
-## API
+## Fedora Linux deployment
 
-### Health
+Fedora uses native Podman and does not need `podman machine`.
+
+Install dependencies:
 
 ```bash
-curl http://localhost:8080/api/health
+sudo dnf install -y podman git curl
 ```
 
-### Inspect a repository
+Clone Launchly and enter the repository:
 
-`POST /api/plans` performs a shallow clone and inspects the repository contents. The temporary checkout is removed after planning.
+```bash
+git clone https://github.com/gnahiak2/launchly.git
+cd launchly
+```
+
+Enable the rootful Podman API socket. Launchly uses this socket to build and run website containers:
+
+```bash
+sudo systemctl enable --now podman.socket
+```
+
+Build the image. `--network=host` avoids Fedora build-container DNS issues when downloading Rust or npm dependencies:
+
+```bash
+sudo podman build \
+  --network=host \
+  -t launchly:dev \
+  -f Containerfile .
+```
+
+Prepare the shared deployment directory:
+
+```bash
+sudo mkdir -p /tmp/launchly
+sudo chmod 777 /tmp/launchly
+```
+
+Run Launchly with host networking, the Podman socket, and the shared workspace:
+
+```bash
+sudo podman rm -f launchly 2>/dev/null || true
+
+sudo podman run -d \
+  --name launchly \
+  --network host \
+  --security-opt label=disable \
+  -v /run/podman/podman.sock:/run/podman/podman.sock \
+  -v /tmp/launchly:/tmp/launchly:rw \
+  launchly:dev
+```
+
+`--network host` lets Launchly resolve Git hosts and health-check deployed websites through the host network. The Podman socket is only mounted into the trusted Launchly control-plane container; never mount it into deployed websites.
+
+Check Launchly:
+
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+Expected:
+
+```json
+{"status":"ok"}
+```
+
+## Fedora DNS troubleshooting
+
+If the image build cannot resolve `index.crates.io`:
+
+```bash
+getent hosts index.crates.io
+curl -I https://index.crates.io/config.json
+```
+
+Retry the build with host networking:
+
+```bash
+sudo podman build --network=host -t launchly:dev -f Containerfile .
+```
+
+If Git cannot resolve `github.com` during a deployment, confirm the Launchly container is using host networking:
+
+```bash
+sudo podman inspect launchly --format '{{.HostConfig.NetworkMode}}'
+```
+
+It should report:
+
+```text
+host
+```
+
+## Nginx reverse proxy and HTTPS
+
+Launchly listens on `127.0.0.1:8080` from the host-network container. Put Nginx in front of it:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name launchly.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+On Fedora:
+
+```bash
+sudo dnf install -y nginx certbot python3-certbot-nginx
+sudo setsebool -P httpd_can_network_connect 1
+sudo nginx -t
+sudo systemctl enable --now nginx
+sudo certbot --nginx -d launchly.example.com
+```
+
+Replace `launchly.example.com` with a real domain whose DNS points to the server.
+
+## API
+
+Inspect a repository. This clones the repository temporarily and checks its actual contents:
 
 ```bash
 curl -X POST http://localhost:8080/api/plans \
@@ -304,26 +166,7 @@ curl -X POST http://localhost:8080/api/plans \
   -d '{"repository_url":"https://github.com/gnahiak2/gnahiak2.github.io.git"}'
 ```
 
-A vanilla HTML response looks like:
-
-```json
-{
-  "repository_url": "https://github.com/gnahiak2/gnahiak2.github.io.git",
-  "framework": "Vanilla HTML",
-  "language": "HTML/CSS/JavaScript",
-  "package_manager": "None",
-  "build_command": "No build required",
-  "start_command": "nginx -g 'daemon off;'",
-  "port": 8080,
-  "confidence": "high",
-  "rationale": [
-    "Detected index.html without a framework manifest.",
-    "This repository can be served as a static site without a package manager."
-  ]
-}
-```
-
-### Start a deployment
+Create a deployment:
 
 ```bash
 curl -X POST http://localhost:8080/api/deployments \
@@ -334,9 +177,7 @@ curl -X POST http://localhost:8080/api/deployments \
   }'
 ```
 
-The API immediately returns a deployment record and an ID.
-
-### Check deployment status
+Check deployment status:
 
 ```bash
 curl http://localhost:8080/api/deployments/<deployment-id>
@@ -345,77 +186,58 @@ curl http://localhost:8080/api/deployments/<deployment-id>
 Deployment states are:
 
 ```text
-queued
-  → discovering
-  → planning
-  → building
-  → starting
-  → verifying
-  → live
+queued → discovering → planning → building → starting → verifying → live
 ```
 
-A deployment can enter `failed` from any execution phase. Failures include a safe diagnostic message and trigger cleanup of temporary resources.
+Failures include a diagnostic message. Failed workspaces, images, and containers are cleaned up.
 
-## Optional Gemini fallback
+## Local development
 
-If local repository signals are insufficient, Launchly can use Gemini as an optional second opinion. It is disabled unless `GEMINI_API_KEY` is configured:
+Run the backend:
 
 ```bash
-podman rm -f launchly 2>/dev/null || true
-podman run -d \
-  --name launchly \
-  -p 8080:8080 \
-  -e GEMINI_API_KEY='your-api-key' \
-  launchly:dev
+cargo run --manifest-path backend/Cargo.toml
 ```
 
-Gemini receives a bounded repository snapshot, not the full repository. Launchly excludes `.git`, dependency directories, build output, environment files, and common secret/key filenames. Returned JSON is validated before it can influence a plan.
+Run tests:
 
-Using Gemini has external API, privacy, quota, and cost implications. Do not configure it when repository metadata must remain entirely on the deployment host.
+```bash
+cargo test --manifest-path backend/Cargo.toml
+```
 
-## Security and safety boundaries
+Format Rust:
 
-Launchly treats repository contents and repository URLs as untrusted input.
+```bash
+cargo fmt --manifest-path backend/Cargo.toml
+```
 
-- Git commands use argument arrays rather than shell interpolation.
-- Repository URLs must use HTTP(S), include a host and path, and cannot contain credentials, query strings, fragments, localhost targets, or path traversal patterns.
-- Clone, build, and run operations have timeouts.
-- Application containers use explicit names and ports.
-- Application containers run with a read-only filesystem, dropped capabilities, `no-new-privileges`, CPU/memory/PID limits, and bridge networking.
-- Static-site build contexts exclude common secret and dependency paths.
-- A deployment is not marked live until an HTTP health check returns status 200.
-- Caddy must only be configured for deployments that have reached `live`.
-- Secrets must not be placed in repository files, image layers, command arguments, deployment plans, or logs.
+Build the TypeScript dashboard:
+
+```bash
+cd frontend
+npm install
+npm run build
+```
 
 ## Project structure
 
 ```text
-.
-├── backend/
-│   ├── Cargo.toml
-│   └── src/
-│       ├── api.rs       # Axum handlers and API translation
-│       ├── deploy.rs    # Deployment jobs, Git, Podman, health checks
-│       ├── detector.rs  # Deterministic repository detection
-│       ├── gemini.rs    # Optional bounded Gemini fallback
-│       ├── models.rs    # Serializable request and domain models
-│       └── main.rs      # Application startup and routing
-├── frontend/
-│   ├── app.ts          # Typed browser API client and polling
-│   ├── index.html      # Dashboard markup
-│   ├── style.css       # Dashboard styling
-│   ├── package.json     # TypeScript build scripts
-│   └── tsconfig.json
-├── Containerfile
-├── Caddyfile
-└── podman-compose.yml
+backend/src/api.rs       HTTP handlers
+backend/src/deploy.rs    Git, Podman, health checks, cleanup
+backend/src/detector.rs  index.html detection and URL validation
+backend/src/models.rs    API and deployment models
+frontend/                lightweight TypeScript dashboard
+Containerfile            backend and frontend image build
+Caddyfile                optional reverse-proxy configuration
 ```
 
-## Current limitations
+## Safety boundaries
 
-- Deployment state is currently in memory and is lost when the backend restarts.
-- Private repositories require an authentication design that is not implemented yet.
-- The Podman socket/workspace sharing setup needs explicit operator configuration when Launchly runs inside a container.
-- Caddy configuration is not automatically reloaded yet; validated live-state routing is the next integration step.
-- The plan detector intentionally fails safely when evidence is ambiguous.
-- Gemini is an optional fallback, not a replacement for deterministic detection or operator review.
+- Repository URLs must be public HTTP(S) URLs without credentials, fragments, query strings, localhost, or path traversal.
+- Git operations have a five-minute timeout.
+- Repository commands are never executed.
+- Website images run with an unprivileged Nginx user.
+- Website containers use read-only filesystems, temporary runtime filesystems, dropped capabilities, `no-new-privileges`, CPU/memory/PID limits, and bridge networking.
+- A deployment is only `live` after an HTTP health check succeeds.
+- Secrets are excluded from static build contexts where possible.
+- The Podman socket is only used by the trusted Launchly control plane.

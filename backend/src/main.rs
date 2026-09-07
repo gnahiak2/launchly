@@ -1,7 +1,6 @@
 mod api;
 mod deploy;
 mod detector;
-mod gemini;
 mod models;
 
 use axum::{

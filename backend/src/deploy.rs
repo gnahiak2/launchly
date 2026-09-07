@@ -1,5 +1,5 @@
 use crate::{
-    detector, gemini,
+    detector,
     models::{DeployRequest, DeploymentPlan, DeploymentRecord},
 };
 use std::{
@@ -18,7 +18,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-const CLONE_TIMEOUT: Duration = Duration::from_secs(90);
+const CLONE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const RUN_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -53,12 +53,7 @@ pub async fn inspect_repository(repository_url: &str) -> Result<DeploymentPlan, 
             return Err(format!("git clone failed: {}", clone.stderr));
         }
 
-        let mut plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
-        if plan.confidence == "low" {
-            if let Ok(Some(gemini_plan)) = gemini::infer_plan(&repository_url, &workspace).await {
-                plan = gemini_plan;
-            }
-        }
+        let plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
         Ok(plan)
     }
     .await;
@@ -162,23 +157,14 @@ impl DeploymentService {
             None,
         )
         .await;
-        let mut plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
-        if plan.confidence == "low" {
-            if let Ok(Some(gemini_plan)) = gemini::infer_plan(&repository_url, &workspace).await {
-                plan = gemini_plan;
-            }
-        }
-        if plan.confidence == "low" || plan.confidence == "low (Gemini-assisted)" {
-            return Err("repository did not provide enough evidence for a safe build".into());
-        }
+        let plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
         self.set_plan(&id, plan.clone()).await;
 
-        if plan.framework == "Vanilla HTML" {
+        {
             tokio::fs::write(
                 workspace.join("Containerfile"),
-                r#"FROM nginx:alpine
-COPY . /usr/share/nginx/html
-RUN sed -i 's/listen 80;/listen 8080;/g; s/listen \[::\]:80;/listen [::]:8080;/g' /etc/nginx/conf.d/default.conf
+                r#"FROM nginxinc/nginx-unprivileged:alpine
+COPY --chown=101:101 . /usr/share/nginx/html
 EXPOSE 8080
 "#,
             )
@@ -200,13 +186,6 @@ build
             )
             .await
             .map_err(|error| format!("failed to create static-site ignore file: {error}"))?;
-        }
-
-        if !workspace.join("Dockerfile").is_file() && !workspace.join("Containerfile").is_file() {
-            return Err(
-                "repository has no Dockerfile or Containerfile; image build was not attempted"
-                    .into(),
-            );
         }
 
         self.update(
@@ -282,13 +261,31 @@ build
         )
         .await;
         if let Err(error) = wait_for_health(host_port).await {
+            let logs = run_command(
+                "podman",
+                vec![
+                    "logs".into(),
+                    "--tail".into(),
+                    "100".into(),
+                    container.clone(),
+                ],
+                RUN_TIMEOUT,
+            )
+            .await
+            .map(|output| truncate(&output.stdout, 8_192))
+            .unwrap_or_default();
             let _ = run_command(
                 "podman",
                 vec!["rm".into(), "--force".into(), container.clone()],
                 RUN_TIMEOUT,
             )
             .await;
-            return Err(format!("health verification failed: {error}"));
+            let diagnostic = if logs.trim().is_empty() {
+                String::new()
+            } else {
+                format!(" Container logs: {logs}")
+            };
+            return Err(format!("health verification failed: {error}.{diagnostic}"));
         }
 
         self.update(&id, "live", "application is healthy and live", None)
@@ -359,6 +356,7 @@ build
 
 struct CommandOutput {
     success: bool,
+    stdout: String,
     stderr: String,
 }
 
@@ -370,7 +368,7 @@ async fn run_command(
     let mut command = Command::new(program);
     command
         .args(args)
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     let output = timeout(duration, command.output())
@@ -379,6 +377,7 @@ async fn run_command(
         .map_err(|e| format!("failed to run {program}: {e}"))?;
     Ok(CommandOutput {
         success: output.status.success(),
+        stdout: truncate(&String::from_utf8_lossy(&output.stdout), 32_768),
         stderr: truncate(&String::from_utf8_lossy(&output.stderr), 32_768),
     })
 }
