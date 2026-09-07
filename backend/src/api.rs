@@ -1,6 +1,5 @@
 use crate::{
-    deploy::DeploymentService,
-    detector,
+    deploy::{inspect_repository, DeploymentService},
     models::{CreatePlanRequest, DeployRequest, ErrorResponse, HealthResponse},
 };
 use axum::{
@@ -15,7 +14,7 @@ pub async fn health() -> Json<HealthResponse> {
 }
 
 pub async fn create_plan(Json(request): Json<CreatePlanRequest>) -> impl IntoResponse {
-    match detector::create_plan(&request.repository_url) {
+    match inspect_repository(&request.repository_url).await {
         Ok(plan) => (StatusCode::OK, Json(plan)).into_response(),
         Err(error) => (StatusCode::BAD_REQUEST, Json(ErrorResponse { error })).into_response(),
     }

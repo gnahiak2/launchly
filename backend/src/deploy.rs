@@ -28,6 +28,45 @@ pub struct DeploymentService {
     deployments: Arc<RwLock<HashMap<String, DeploymentRecord>>>,
 }
 
+pub async fn inspect_repository(repository_url: &str) -> Result<DeploymentPlan, String> {
+    let repository_url = detector::parse_repository_url(repository_url.trim())?.to_owned();
+    let preview_id = format!("preview-{}", Uuid::new_v4());
+    let workspace = workspace_dir(&preview_id);
+    tokio::fs::create_dir_all(&workspace)
+        .await
+        .map_err(|error| format!("failed to create inspection workspace: {error}"))?;
+
+    let result = async {
+        let clone = run_command(
+            "git",
+            vec![
+                "clone".into(),
+                "--depth".into(),
+                "1".into(),
+                repository_url.clone(),
+                workspace.to_string_lossy().into_owned(),
+            ],
+            CLONE_TIMEOUT,
+        )
+        .await?;
+        if !clone.success {
+            return Err(format!("git clone failed: {}", clone.stderr));
+        }
+
+        let mut plan = detector::detect_plan_from_workspace(&repository_url, &workspace)?;
+        if plan.confidence == "low" {
+            if let Ok(Some(gemini_plan)) = gemini::infer_plan(&repository_url, &workspace).await {
+                plan = gemini_plan;
+            }
+        }
+        Ok(plan)
+    }
+    .await;
+
+    let _ = tokio::fs::remove_dir_all(&workspace).await;
+    result
+}
+
 impl DeploymentService {
     pub fn new() -> Self {
         Self::default()

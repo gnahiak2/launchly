@@ -1,6 +1,7 @@
 use crate::models::DeploymentPlan;
 use std::{fs, path::Path};
 
+#[allow(dead_code)]
 pub fn create_plan(repository_url: &str) -> Result<DeploymentPlan, String> {
     let trimmed = repository_url.trim();
     let parsed = parse_repository_url(trimmed)?;
@@ -296,6 +297,7 @@ fn has_file(workspace: &Path, name: &str) -> bool {
     workspace.join(name).is_file()
 }
 
+#[allow(dead_code)]
 fn has_any(value: &str, signals: &[&str]) -> bool {
     signals.iter().any(|signal| value.contains(signal))
 }
