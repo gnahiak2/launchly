@@ -163,7 +163,7 @@ impl DeploymentService {
         {
             tokio::fs::write(
                 workspace.join("Containerfile"),
-                r#"FROM nginxinc/nginx-unprivileged:alpine
+                r#"FROM docker.io/nginxinc/nginx-unprivileged:alpine
 COPY --chown=101:101 . /usr/share/nginx/html
 EXPOSE 8080
 "#,
