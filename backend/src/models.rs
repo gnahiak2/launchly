@@ -5,7 +5,13 @@ pub struct CreatePlanRequest {
     pub repository_url: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize)]
+pub struct DeployRequest {
+    pub repository_url: String,
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DeploymentPlan {
     pub repository_url: String,
     pub framework: String,
@@ -16,6 +22,22 @@ pub struct DeploymentPlan {
     pub port: u16,
     pub confidence: String,
     pub rationale: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeploymentRecord {
+    pub id: String,
+    pub repository_url: String,
+    pub domain: Option<String>,
+    pub state: String,
+    pub phase: String,
+    pub message: String,
+    pub plan: Option<DeploymentPlan>,
+    pub image: Option<String>,
+    pub container: Option<String>,
+    pub host_port: Option<u16>,
+    pub created_at: u64,
+    pub updated_at: u64,
 }
 
 #[derive(Debug, Serialize)]

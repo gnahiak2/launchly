@@ -1,6 +1,7 @@
 mod api;
 mod deploy;
 mod detector;
+mod gemini;
 mod models;
 
 use axum::{
@@ -15,10 +16,16 @@ async fn main() {
     let frontend = std::env::var_os("LAUNCHLY_FRONTEND_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../frontend"));
+    let deployments = deploy::DeploymentService::new();
+
     let app = Router::new()
         .route("/api/health", get(api::health))
         .route("/api/plans", post(api::create_plan))
-        .fallback_service(ServeDir::new(frontend).append_index_html_on_directories(true));
+        .route("/api/deployments", post(api::create_deployment))
+        .route("/api/deployments/{id}", get(api::get_deployment))
+        .fallback_service(ServeDir::new(frontend).append_index_html_on_directories(true))
+        .with_state(deployments);
+
     let address: SocketAddr = ([0, 0, 0, 0], 8080).into();
     println!("Launchly listening on http://{address}");
     let listener = tokio::net::TcpListener::bind(address)

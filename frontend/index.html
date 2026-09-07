@@ -1,107 +1,55 @@
-<<<<<<< HEAD
 <!doctype html>
 <html lang="en">
-<<<<<<< HEAD
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Launchly — deploy any Git repository with confidence.">
+  <meta name="description" content="Launchly — deploy a Git repository with an explainable plan.">
   <title>Launchly · Deployments</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="app.js" defer></script>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
-  <div class="app-shell">
-    <aside class="sidebar" aria-label="Primary navigation">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <span>launchly</span>
-      </div>
-      <div class="workspace-switcher">
-        <span class="workspace-avatar">L</span>
-        <span class="workspace-copy"><strong>Personal workspace</strong><small>Self-hosted</small></span>
-        <button class="icon-button" type="button" aria-label="Switch workspace">⌄</button>
-      </div>
-      <nav class="nav-list">
-        <a class="nav-item active" href="#overview" aria-current="page"><span class="nav-icon">⌂</span>Overview</a>
-        <a class="nav-item" href="#deployments"><span class="nav-icon">◈</span>Deployments</a>
-        <a class="nav-item" href="#activity"><span class="nav-icon">◌</span>Activity</a>
-      </nav>
-      <div class="sidebar-footer">
-        <a class="nav-item" href="#settings"><span class="nav-icon">⚙</span>Settings</a>
-        <div class="connection-status"><span class="status-dot"></span><span><strong>Instance online</strong><small>localhost</small></span></div>
-      </div>
-    </aside>
+  <div class="shell">
+    <header class="hero">
+      <p class="eyebrow">Launchly</p>
+      <h1>From Git to alive.</h1>
+      <p class="lede">Inspect a repository, review the plan, and start a guarded deployment when you are ready.</p>
+    </header>
 
-    <main id="main-content" class="main-content">
-      <header class="topbar">
-        <div class="breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>Overview</strong></div>
-        <div class="topbar-actions"><button class="icon-button" type="button" aria-label="View notifications">◔<span class="notification-dot"></span></button><button class="user-menu" type="button"><span class="user-avatar">TH</span><span class="user-name">Theo</span><span aria-hidden="true">⌄</span></button></div>
-      </header>
+    <main id="main-content" class="grid">
+      <section class="card" aria-labelledby="deploy-title">
+        <div class="card-heading"><div><p class="card-kicker">Deploy</p><h2 id="deploy-title">New deployment</h2></div><span class="badge">Podman</span></div>
+        <form id="deploy-form" class="form" novalidate>
+          <label class="field-label" for="repository-url">Git repository URL</label>
+          <input id="repository-url" name="repository_url" type="url" placeholder="https://github.com/you/your-app.git" autocomplete="url" required>
+          <label class="field-label" for="domain">Domain <span class="optional">(optional)</span></label>
+          <input id="domain" name="domain" type="text" placeholder="app.example.com" autocomplete="url">
+          <p class="field-hint">Launchly clones the repository, inspects it, and only runs a plan with strong signals.</p>
+          <div class="actions"><button id="plan-button" type="button">Inspect repository</button><button id="deploy-button" type="submit">Deploy</button> application</button></div>
+          <p id="form-message" class="message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
 
-      <div class="page-content">
-        <section id="overview" class="page-heading">
-          <div><p class="eyebrow">Deployment workspace</p><h1>Ship with confidence.</h1><p class="subheading">Give Launchly a repository. It figures out the rest.</p></div>
-          <button class="button button-primary" type="button" data-scroll-to="new-deployment"><span>＋</span> New deployment</button>
-        </section>
-
-        <section class="metrics-grid" aria-label="Deployment summary">
-          <article class="metric-card"><div class="metric-label"><span class="metric-icon purple">◈</span><span>Total deployments</span></div><strong>12</strong><span class="metric-trend positive">↑ 3 this month</span></article>
-          <article class="metric-card"><div class="metric-label"><span class="metric-icon green">✓</span><span>Live now</span></div><strong>3</strong><span class="metric-trend neutral">All systems healthy</span></article>
-          <article class="metric-card"><div class="metric-label"><span class="metric-icon amber">◷</span><span>Avg. deploy time</span></div><strong>2m 14s</strong><span class="metric-trend positive">↓ 18% vs. last month</span></article>
-          <article class="metric-card"><div class="metric-label"><span class="metric-icon blue">⌁</span><span>Success rate</span></div><strong>98.4%</strong><span class="metric-trend positive">↑ 2.1% this month</span></article>
-        </section>
-
-        <div class="dashboard-grid">
-          <section id="new-deployment" class="panel deploy-panel">
-            <div class="panel-header"><div><h2>New deployment</h2><p>Connect a Git repository to get started.</p></div><span class="step-count">01 <span>/ 02</span></span></div>
-            <form id="deploy-form" novalidate>
-              <label class="field-label" for="repo-url">Repository URL</label>
-              <div class="input-with-icon"><span aria-hidden="true">⌘</span><input id="repo-url" name="repo-url" type="url" placeholder="https://github.com/you/your-app" autocomplete="url" required><button class="clear-input" type="button" aria-label="Clear repository URL">×</button></div>
-              <p class="field-hint">Public repositories are supported. Private repositories will require authentication.</p>
-              <div class="form-row"><div class="form-field"><label class="field-label" for="branch">Branch <span class="optional">(optional)</span></label><input id="branch" name="branch" type="text" value="main" placeholder="main"></div><div class="form-field"><label class="field-label" for="domain">Domain <span class="optional">(optional)</span></label><input id="domain" name="domain" type="text" placeholder="my-app.example.com"></div></div>
-              <button class="button button-primary button-full" type="submit"><span>✦</span> Detect &amp; continue</button>
-              <p id="form-message" class="form-message" role="status"></p>
-            </form>
-          </section>
-
-          <section class="panel plan-panel" aria-labelledby="plan-heading">
-            <div class="panel-header"><div><h2 id="plan-heading">Deployment plan</h2><p>Review what Launchly detected.</p></div><span class="plan-badge">Preview</span></div>
-            <div id="plan-empty" class="empty-plan"><div class="empty-plan-icon">✦</div><h3>Your plan will appear here</h3><p>Enter a repository URL and Launchly will inspect its files to determine the best way to build and run it.</p></div>
-            <div id="plan-content" class="plan-content hidden">
-              <div class="detected-stack"><div class="stack-icon">JS</div><div><span class="eyebrow">Detected stack</span><strong id="plan-stack">Node.js</strong></div><span class="confidence">98% confidence</span></div>
-              <dl class="plan-details"><div><dt>Build command</dt><dd id="plan-build">npm run build</dd></div><div><dt>Start command</dt><dd id="plan-start">npm start</dd></div><div><dt>Application port</dt><dd id="plan-port">3000</dd></div></dl>
-              <div class="plan-reason"><span>ⓘ</span><p id="plan-reason-text">Detected package.json and package-lock.json in the repository root.</p></div>
-              <button class="button button-secondary button-full" type="button" id="review-plan">Review full plan <span>→</span></button>
-            </div>
-          </section>
+      <section class="card" aria-labelledby="plan-title" aria-live="polite">
+        <div class="card-heading"><div><p class="card-kicker">Plan</p><h2 id="plan-title">Deployment plan</h2></div><span id="confidence" class="badge badge-muted">Waiting</span></div>
+        <div id="empty-plan" class="empty-state"><p>Inspect a repository to see its detected stack, commands, port, and rationale.</p></div>
+        <div id="plan-content" class="plan-content" hidden>
+          <dl class="plan-grid">
+            <div><dt>Framework</dt><dd id="plan-framework"></dd></div><div><dt>Language</dt><dd id="plan-language"></dd></div>
+            <div><dt>Package manager</dt><dd id="plan-package-manager"></dd></div><div><dt>Port</dt><dd id="plan-port"></dd></div>
+            <div class="full"><dt>Build command</dt><dd id="plan-build"></dd></div><div class="full"><dt>Start command</dt><dd id="plan-start"></dd></div>
+          </dl>
+          <div class="reason"><strong>Why this plan?</strong><ul id="plan-rationale"></ul></div>
         </div>
+      </section>
 
-        <section id="deployments" class="panel deployments-panel">
-          <div class="panel-header table-header"><div><h2>Recent deployments</h2><p>Monitor your applications at a glance.</p></div><div class="table-actions"><label class="search-field"><span aria-hidden="true">⌕</span><input id="deployment-search" type="search" placeholder="Search deployments" aria-label="Search deployments"></label><button class="button button-secondary filter-button" type="button" id="filter-button">Filter <span>⌄</span></button></div></div>
-          <div class="table-wrap"><table><caption class="sr-only">Recent deployments and their current status</caption><thead><tr><th>Application</th><th>Status</th><th>Repository</th><th>Deployed</th><th>Duration</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="deployment-list"></tbody></table></div>
-          <div id="no-results" class="no-results hidden"><span>⌕</span><strong>No deployments found</strong><p>Try a different search term.</p></div>
-          <div class="pagination"><span>Showing <strong id="result-count">3</strong> of 12 deployments</span><div><button class="page-button" type="button" disabled aria-label="Previous page">←</button><button class="page-button current" type="button" aria-current="page">1</button><button class="page-button" type="button">2</button><button class="page-button" type="button">3</button><button class="page-button" type="button" aria-label="Next page">→</button></div></div>
-        </section>
-
-        <footer class="footer"><span>Launchly <span aria-hidden="true">·</span> v0.1.0</span><span><a href="#docs">Documentation</a><a href="#status">System status <span class="status-dot"></span></a></span></footer>
-      </div>
+      <section class="card status-card" aria-labelledby="status-title">
+        <div class="card-heading"><div><p class="card-kicker">Execution</p><h2 id="status-title">Deployment status</h2></div><span id="status-badge" class="badge badge-muted">Not started</span></div>
+        <div id="deployment-status" class="status-content"><p>Deployment progress will appear here after you start a deployment.</p></div>
+      </section>
     </main>
+    <footer class="footer">Launchly · self-hosted deployment from Git</footer>
   </div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
-=======
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Launchly — Deploy from Git</title><link rel="stylesheet" href="/style.css"></head>
-<body><main><p class="eyebrow">Launchly</p><h1>From Git to alive.</h1><p class="lede">Give Launchly a repository. It detects the stack, explains how it will run, and gives you a deployment plan before anything is built.</p>
-<section class="panel" aria-labelledby="form-title"><h2 id="form-title">Create a deployment plan</h2><form id="plan-form"><label for="repository-url">Git repository URL</label><div class="form-row"><input id="repository-url" name="repository_url" type="url" placeholder="https://github.com/you/your-app" required autocomplete="url"><button type="submit">Inspect repository</button></div><p id="error" class="error" role="alert" hidden></p></form></section>
-<section id="result" class="panel" aria-live="polite" hidden><div class="plan-title"><h2>Deployment plan</h2><span id="confidence" class="confidence"></span></div><dl><div><dt>Framework</dt><dd id="framework"></dd></div><div><dt>Language</dt><dd id="language"></dd></div><div><dt>Package manager</dt><dd id="package-manager"></dd></div><div><dt>Port</dt><dd id="port"></dd></div><div><dt>Build command</dt><dd id="build-command"></dd></div><div><dt>Start command</dt><dd id="start-command"></dd></div></dl><h3>Why this plan?</h3><ul id="rationale"></ul></section></main>
-<script>
-const form=document.querySelector('#plan-form'), button=form.querySelector('button'), error=document.querySelector('#error'), result=document.querySelector('#result');
-const set=(id,value)=>document.querySelector(id).textContent=value;
-form.addEventListener('submit',async event=>{event.preventDefault(); error.hidden=true; result.hidden=true; button.disabled=true; button.textContent='Inspecting…'; try { const response=await fetch('/api/plans',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({repository_url:form.repository_url.value})}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'Unable to create a plan'); set('#framework',data.framework);set('#language',data.language);set('#package-manager',data.package_manager);set('#port',data.port);set('#build-command',data.build_command);set('#start-command',data.start_command);set('#confidence','Confidence: '+data.confidence); document.querySelector('#rationale').replaceChildren(...data.rationale.map(item=>{const li=document.createElement('li');li.textContent=item;return li;})); result.hidden=false; } catch (caught) { error.textContent=caught.message; error.hidden=false; } finally { button.disabled=false; button.textContent='Inspect repository'; }});
-</script></body></html>
->>>>>>> a6ed462abba2fa472ba7b1f22f059283965586ae
-=======
->>>>>>> a7c28fa0798fe763f05b7b5fa46bb13306300045
