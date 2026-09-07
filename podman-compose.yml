@@ -1,0 +1,23 @@
+services:
+  launchly:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: launchly:dev
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - launchly
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  caddy-data:
+  caddy-config:
