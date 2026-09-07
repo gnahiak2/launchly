@@ -220,7 +220,7 @@ build
             "podman",
             vec![
                 "build".into(),
-                "--pull=never".into(),
+                "--pull=missing".into(),
                 "--tag".into(),
                 image.clone(),
                 workspace.to_string_lossy().into_owned(),
