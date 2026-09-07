@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.88-bookworm AS builder
 WORKDIR /src
-COPY backend/Cargo.toml ./backend/
+COPY backend/Cargo.toml backend/Cargo.lock ./backend/
 COPY backend/src ./backend/src
-RUN cargo build --manifest-path backend/Cargo.toml --release
+RUN cargo build --locked --manifest-path backend/Cargo.toml --release
 
 FROM node:22-bookworm-slim AS frontend-builder
 WORKDIR /src/frontend
